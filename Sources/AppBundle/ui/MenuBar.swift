@@ -4,7 +4,14 @@ import SwiftUI
 
 @MainActor
 public func menuBar(viewModel: TrayMenuModel) -> some Scene { // todo should it be converted to "SwiftUI struct"?
-    MenuBarExtra {
+    // Tools that build their own UI on top of AeroSpace (status bars, control
+    // apps) end up with two sources of truth in the menu bar. Let them retire
+    // this one: `defaults write bobko.aerospace menu-bar-icon-hidden -bool
+    // true`. Read once at launch; every menu action remains reachable through
+    // the CLI, and deleting the default brings the icon back on next launch.
+    MenuBarExtra(isInserted: .constant(
+        !UserDefaults.standard.bool(forKey: "menu-bar-icon-hidden")
+    )) {
         let shortIdentification = "\(aeroSpaceAppName) v\(aeroSpaceAppVersion) \(gitShortHash)"
         let identification      = "\(aeroSpaceAppName) v\(aeroSpaceAppVersion) \(gitHash)"
         Text(shortIdentification)
