@@ -9,8 +9,14 @@ public func menuBar(viewModel: TrayMenuModel) -> some Scene { // todo should it 
     // this one: `defaults write bobko.aerospace menu-bar-icon-hidden -bool
     // true`. Read once at launch; every menu action remains reachable through
     // the CLI, and deleting the default brings the icon back on next launch.
+    // The explicit domain, not .standard: .standard resolves through the
+    // bundle identifier, and this process doesn't always have one — run as a
+    // bare helper executable inside another app, .standard lands in a domain
+    // nobody writes to and the icon comes back. One domain for every way the
+    // engine can be launched.
     MenuBarExtra(isInserted: .constant(
-        !UserDefaults.standard.bool(forKey: "menu-bar-icon-hidden")
+        !(UserDefaults(suiteName: "bobko.aerospace")?
+            .bool(forKey: "menu-bar-icon-hidden") ?? false)
     )) {
         let shortIdentification = "\(aeroSpaceAppName) v\(aeroSpaceAppVersion) \(gitShortHash)"
         let identification      = "\(aeroSpaceAppName) v\(aeroSpaceAppVersion) \(gitHash)"
