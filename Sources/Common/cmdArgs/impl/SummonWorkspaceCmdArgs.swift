@@ -6,6 +6,10 @@ public struct SummonWorkspaceCmdArgs: CmdArgs {
         help: summon_workspace_help_generated,
         flags: [
             "--fail-if-noop": trueBoolFlag(\.failIfNoop),
+            // Panewright extensions: heal a monitor stuck on an auto-invented
+            // workspace without disturbing the user's focus.
+            "--on-monitor": singleValueSubArgParser(\.onMonitor, "<monitor-id>", parseUInt32),
+            "--no-focus": trueBoolFlag(\.noFocus),
         ],
         posArgs: [
             dashDashArg(mandatory: false),
@@ -15,6 +19,10 @@ public struct SummonWorkspaceCmdArgs: CmdArgs {
 
     public var target: Lateinit<WorkspaceName> = .uninitialized
     public var failIfNoop: Bool = false
+    /// Set the workspace active on this monitor instead of the focused one.
+    public var onMonitor: UInt32? = nil
+    /// Make it visible without moving focus to it.
+    public var noFocus: Bool = false
 }
 
 private func parseWorkspaceName(i: PosArgParserInput) -> ParsedCliArgs<WorkspaceName> {
