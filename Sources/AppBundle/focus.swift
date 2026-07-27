@@ -60,12 +60,24 @@ private struct FrozenFocus: AeroAny, Equatable, Sendable {
 /// AEROSPACE_WORKSPACE env before accessing the global focus.
 @MainActor var focus: LiveFocus { _focus.live }
 
+/// When a command deliberately focused an *empty* workspace. An empty
+/// workspace gives macOS nothing to focus, so the previously focused window
+/// keeps native focus — and async focus grants queued by an earlier
+/// workspace switch can land after this one. Both look like "the native
+/// focused window changed" to the focus cache, which then follows them and
+/// drags the user right back off the workspace they just chose. The cache
+/// swallows such events for a beat after an empty-workspace focus.
+@MainActor var focusedEmptyWorkspaceAt: Date = .distantPast
+
 @MainActor func setFocus(to newFocus: LiveFocus) -> Bool {
     if _focus == newFocus.frozen { return true }
     let oldFocus = focus
     // Normalize mruWindow when focus away from a workspace
     if oldFocus.workspace != newFocus.workspace {
         oldFocus.windowOrNil?.markAsMostRecentChild()
+    }
+    if newFocus.windowOrNil == nil {
+        focusedEmptyWorkspaceAt = .now
     }
 
     _focus = newFocus.frozen
