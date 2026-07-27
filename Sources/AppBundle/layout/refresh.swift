@@ -184,15 +184,25 @@ private func layoutWorkspaces() async throws {
         // and macOS clamps them to stay a point inside the visible area — so a
         // corner obstructed by the Dock leaves hidden windows rendered in the
         // strip between the visible edge and the physical screen edge, peeking
-        // out from around the Dock (#66). Weigh an obstructed corner like a
-        // corner bleeding onto another monitor, so hiding prefers the corner
-        // that still touches the physical edge of the screen.
-        let blcDockObstructed = monitor.visibleRect.minX > monitor.rect.minX + 2 ? important : 0
-        let brcDockObstructed = monitor.visibleRect.maxX < monitor.rect.maxX - 2 ? important : 0
+        // out from around the Dock (#66). Bad — but strictly less bad than a
+        // corner bleeding onto another monitor, so it weighs half as much.
+        //
+        // Every neighbor probe carries the full weight, not just the diagonal
+        // one. Two displays sharing a bottom edge defeat the diagonal probe
+        // (corner + 2 in y is below both screens), yet the parked window still
+        // lands on the neighbor: macOS's clamp lifts it ~50 points back into
+        // visibility, and from the bottom-right corner it extends rightward —
+        // a 1660×52 strip of every "hidden" window painted across the
+        // neighboring display's bottom edge. The side probe (brc1/blc1) is
+        // the one that sees this coming, and at weight 1 it was outvoted by
+        // the Dock.
+        let dockPenalty = important / 2
+        let blcDockObstructed = monitor.visibleRect.minX > monitor.rect.minX + 2 ? dockPenalty : 0
+        let brcDockObstructed = monitor.visibleRect.maxX < monitor.rect.maxX - 2 ? dockPenalty : 0
 
         let corner: OptimalHideCorner =
-            monitors.sumOfInt { contains($0, blc1) + contains($0, blc2) + important * contains($0, blc3) } + blcDockObstructed <
-            monitors.sumOfInt { contains($0, brc1) + contains($0, brc2) + important * contains($0, brc3) } + brcDockObstructed
+            monitors.sumOfInt { important * (contains($0, blc1) + contains($0, blc2) + contains($0, blc3)) } + blcDockObstructed <
+            monitors.sumOfInt { important * (contains($0, brc1) + contains($0, brc2) + contains($0, brc3)) } + brcDockObstructed
             ? .bottomLeftCorner
             : .bottomRightCorner
         monitorToOptimalHideCorner[monitor.rect.topLeftCorner] = corner
