@@ -117,6 +117,20 @@ extension Workspace {
 @MainActor var prevFocus: LiveFocus? { _prevFocus?.live.takeIf { $0 != focus } }
 
 @MainActor private var onFocusChangedRecursionGuard = false
+// Back-and-forth history with a dwell requirement. Recording every focus
+// change as "previous" meant supervision machinery — workspace restore,
+// distribution across monitors, pill dances — polluted the history with
+// workspaces nobody had been to: $mod+tab then bounced to an empty
+// workspace and (since empty workspaces materialize on the focused
+// monitor) spawned it there. A workspace becomes "previous" only when it
+// was held for a beat before leaving (it was a place, not a hop), and the
+// history only commits once the destination has itself been held for a
+// beat (it was an arrival, not a stop along the way). A round trip that
+// starts and ends on the same workspace commits nothing.
+@MainActor private var focusedWorkspaceSince: Date = .now
+@MainActor private var pendingPrevWorkspaceName: String? = nil
+private let workspaceDwell: TimeInterval = 1.0
+
 // Should be called in refreshSession
 @MainActor func checkOnFocusChangedCallbacks_nonCancellable() async {
     if refreshSessionEvent?.isStartup == true {
@@ -131,8 +145,21 @@ extension Workspace {
         _prevFocus = _lastKnownFocus
         hasFocusChanged = true
     }
+    if let pending = pendingPrevWorkspaceName,
+       pending != frozenFocus.workspaceName,
+       focusedWorkspaceSince.distance(to: .now) >= workspaceDwell {
+        _prevFocusedWorkspaceName = pending
+        pendingPrevWorkspaceName = nil
+    }
+    // The workspace we actually came from — for the change callback below,
+    // which must report the literal transition even when the back-and-forth
+    // history (dwell-filtered) ignores it.
+    let cameFromWorkspace = _lastKnownFocus.workspaceName
     if frozenFocus.workspaceName != _lastKnownFocus.workspaceName {
-        _prevFocusedWorkspaceName = _lastKnownFocus.workspaceName
+        if focusedWorkspaceSince.distance(to: .now) >= workspaceDwell {
+            pendingPrevWorkspaceName = cameFromWorkspace
+        }
+        focusedWorkspaceSince = .now
         hasFocusedWorkspaceChanged = true
     }
     if frozenFocus.monitorId_oneBased != _lastKnownFocus.monitorId_oneBased {
@@ -146,8 +173,8 @@ extension Workspace {
     if hasFocusChanged {
         _ = await onFocusChanged(.defaultEnv, CmdIoImpl.emptyStdinIgnoringOut, focus)
     }
-    if let _prevFocusedWorkspaceName, hasFocusedWorkspaceChanged {
-        onWorkspaceChanged(_prevFocusedWorkspaceName, frozenFocus.workspaceName, focus)
+    if hasFocusedWorkspaceChanged {
+        onWorkspaceChanged(cameFromWorkspace, frozenFocus.workspaceName, focus)
     }
     if hasFocusedMonitorChanged {
         _ = await onFocusedMonitorChanged(.defaultEnv, CmdIoImpl.emptyStdinIgnoringOut, focus)
