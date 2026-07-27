@@ -34,7 +34,17 @@ struct WorkspaceCommand: Command {
                     .succ(io.err("Workspace '\(workspaceName)' is already focused. Tip: use --fail-if-noop to exit with non-zero code"))
             }
         } else {
-            return .from(bool: Workspace.get(byName: workspaceName).focusWorkspace())
+            let workspace = Workspace.get(byName: workspaceName)
+            // i3 semantics: an empty, invisible workspace doesn't exist
+            // anywhere yet, so switching to it materializes it on the focused
+            // monitor. Occupied (or visible) workspaces keep their home and
+            // focus travels to them instead. Without this, every empty
+            // workspace's default home is the main display — so "open a new
+            // workspace here" from a second monitor jumped to the first.
+            if workspace.isEffectivelyEmpty && !workspace.isVisible && workspace.forceAssignedMonitor == nil {
+                _ = focusedWs.workspaceMonitor.setActiveWorkspace(workspace)
+            }
+            return .from(bool: workspace.focusWorkspace())
         }
     }
 }
