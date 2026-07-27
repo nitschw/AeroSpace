@@ -129,6 +129,7 @@ final class MacApp: AbstractApp {
 
     @MainActor func nativeFocus(_ windowId: UInt32) {
         if serverArgs.isReadOnly { return }
+        recordEngineFocusGrant(windowId)
         MacApp.focusJob?.cancel()
         // Performance optimization. If possible avoid doing AX requests
         // (important for apps which are slow at responding even such basic AX requests. E.g. Godot)

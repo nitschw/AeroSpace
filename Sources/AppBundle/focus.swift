@@ -69,6 +69,33 @@ private struct FrozenFocus: AeroAny, Equatable, Sendable {
 /// swallows such events for a beat after an empty-workspace focus.
 @MainActor var focusedEmptyWorkspaceAt: Date = .distantPast
 
+/// When any command last set focus, and every native-focus grant the engine
+/// itself has issued (windowId → when). Together they let the focus cache
+/// tell a *user* focusing a window from the engine's own async focus grants
+/// landing late: a slow app can deliver the grant from a workspace command
+/// seconds after the user has already moved on (endpoint security makes
+/// everything slower), and following it dragged the user backwards through
+/// their own switch history — clicking through workspaces 4, 5, 6 landed on
+/// 4. A grant issued before the latest setFocus is an echo of an abandoned
+/// command, never intent.
+@MainActor var lastSetFocusAt: Date = .distantPast
+@MainActor var engineFocusGrants: [UInt32: Date] = [:]
+/// The grant currently in flight: the window the latest command asked macOS
+/// to focus. Until it lands (or times out), other native focus changes are
+/// transition noise — abandoned earlier grants, or the still-active app
+/// reasserting itself — and following them is how rapid switching dragged
+/// the user to whatever workspace their frontmost app's window lived on.
+@MainActor var inFlightGrant: (windowId: UInt32, at: Date)? = nil
+
+@MainActor func recordEngineFocusGrant(_ windowId: UInt32) {
+    if engineFocusGrants.count > 64 { engineFocusGrants.removeAll() }
+    engineFocusGrants[windowId] = .now
+    // Granting focus to the window that already holds it produces no
+    // confirmation event — gating on one would silence real changes for
+    // the full timeout.
+    inFlightGrant = windowId == lastKnownNativeFocusedWindowId ? nil : (windowId, .now)
+}
+
 @MainActor func setFocus(to newFocus: LiveFocus) -> Bool {
     if _focus == newFocus.frozen { return true }
     let oldFocus = focus
@@ -81,6 +108,7 @@ private struct FrozenFocus: AeroAny, Equatable, Sendable {
     }
 
     _focus = newFocus.frozen
+    lastSetFocusAt = .now
     let status = newFocus.workspace.workspaceMonitor.setActiveWorkspace(newFocus.workspace)
 
     newFocus.windowOrNil?.markAsMostRecentChild()

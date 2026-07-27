@@ -3,6 +3,7 @@ import Common
 import Foundation
 
 @MainActor public func initAppBundle() {
+    registerDisplayReconfigurationGuard()
     Task.startUnstructured {
         initTerminationHandler()
         unsafe _isCli = false

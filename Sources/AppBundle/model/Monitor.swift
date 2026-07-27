@@ -104,10 +104,32 @@ var mainMonitor: Monitor {
     return LazyMonitor(monitorAppKitNsScreenScreensId: screen.index + 1, isMain: true, screen.value)
 }
 
+// Serve a cached monitor list while the display arrangement is actively
+// reconfiguring. Enumerating NSScreen mid-reconfiguration walked into a
+// SkyLight crash (SLSWindowServerClientManagedDisplayGetCurrentSpace →
+// os_log → SIGSEGV) during a dock's renumbering storm — the field trace
+// that finally explained the engine dying every time three monitors
+// arrived at once. A briefly stale list is harmless: the reconfiguration
+// callbacks fire again when the arrangement settles and the next read
+// refreshes.
+nonisolated(unsafe) private var cachedMonitors: [Monitor] = []
+nonisolated(unsafe) private var lastDisplayReconfiguration: Date = .distantPast
+
+func registerDisplayReconfigurationGuard() {
+    CGDisplayRegisterReconfigurationCallback({ _, _, _ in
+        lastDisplayReconfiguration = .now
+    }, nil)
+}
+
 var monitors: [Monitor] {
-    isUnitTest
-        ? [testMonitor]
-        : NSScreen.screens.enumerated().map { $0.element.toMonitor(monitorAppKitNsScreenScreensId: $0.offset + 1) }
+    if isUnitTest { return [testMonitor] }
+    if lastDisplayReconfiguration.distance(to: .now) < 1.0, !cachedMonitors.isEmpty {
+        return cachedMonitors
+    }
+    let fresh = NSScreen.screens.enumerated()
+        .map { $0.element.toMonitor(monitorAppKitNsScreenScreensId: $0.offset + 1) }
+    cachedMonitors = fresh
+    return fresh
 }
 
 var sortedMonitors: [Monitor] {
