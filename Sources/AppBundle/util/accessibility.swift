@@ -13,16 +13,17 @@ func waitForAccessibilityPermission_nonCancellable() async {
             TrayMenuModel.shared.axPermissionStatus = .granted
             break
         }
-        if TrayMenuModel.shared.axPermissionStatus == .waitingWithPrompt {
-            resetAccessibility() // Because macOS doesn't reset it for us when the app signature changes...
-        }
+        // Upstream resets the TCC record here ("because macOS doesn't reset
+        // it when the app signature changes"). Embedded as Panewright's
+        // helper that reset is destructive: it deletes the unchecked
+        // AeroSpace row the prompt just created — the one thing the user
+        // needs to *enable* — and then this loop polls silently forever
+        // against a permission that no longer has a switch. The stale-
+        // signature case it guarded against is handled by Panewright's
+        // stall recovery instead.
         TrayMenuModel.shared.axPermissionStatus = .waiting
         try? await Task.sleep(for: .seconds(1))
     }
-}
-
-private func resetAccessibility() {
-    _ = try? Process.run(URL(filePath: "/usr/bin/tccutil"), arguments: ["reset", "Accessibility", aeroSpaceAppId])
 }
 
 protocol ReadableAttr: Sendable {
