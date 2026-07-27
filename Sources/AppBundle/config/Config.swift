@@ -16,11 +16,34 @@ func getDefaultConfigUrlFromProject() -> URL {
 var defaultConfigUrl: URL {
     if isUnitTest {
         return getDefaultConfigUrlFromProject()
-    } else {
-        return Bundle.main.url(forResource: "default-config", withExtension: "toml")
-            // Useful for debug builds that are not app bundles
-            ?? getDefaultConfigUrlFromProject()
     }
+    if let bundled = Bundle.main.url(forResource: "default-config", withExtension: "toml") {
+        return bundled
+    }
+    // A bare-executable helper (Panewright embeds the engine in the host
+    // app's Contents/Helpers, with no app bundle of its own): Bundle.main
+    // then resolves to the Helpers *directory*, whose resource lookup finds
+    // nothing — and codesign forbids data files in Helpers, so the file
+    // can't simply sit beside the binary in a signed bundle. Look for it
+    // explicitly: next to the binary (unsigned embedders), then in the host
+    // bundle's Resources (../Resources from Helpers). Without this, the
+    // only remaining fallback is the *compile-time* #filePath of the dev
+    // checkout — which exists on exactly one machine in the world, so the
+    // engine booted fine there and died with an assertion on everyone
+    // else's, on every launch, forever.
+    let executable =
+        Bundle.main.executableURL ?? URL(filePath: CommandLine.arguments[0])
+    let helperDirectory = executable.deletingLastPathComponent()
+    let candidates = [
+        helperDirectory.appending(component: "default-config.toml"),
+        helperDirectory.deletingLastPathComponent()
+            .appending(components: "Resources", "default-config.toml"),
+    ]
+    for candidate in candidates where FileManager.default.fileExists(atPath: candidate.path) {
+        return candidate
+    }
+    // Useful for debug builds that are not app bundles
+    return getDefaultConfigUrlFromProject()
 }
 @MainActor let defaultConfig: Config = {
     let parsedConfig = parseConfig(Result { try String(contentsOf: defaultConfigUrl, encoding: .utf8) }.getOrDie())
