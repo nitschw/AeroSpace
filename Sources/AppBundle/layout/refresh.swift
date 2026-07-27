@@ -162,7 +162,14 @@ private func layoutWorkspaces() async throws {
         return
     }
     let monitors = monitors
-    var monitorToOptimalHideCorner: [CGPoint: OptimalHideCorner] = [:]
+    // One hide spot for the whole arrangement, not one per monitor: every
+    // corner leaks a sliver (macOS's clamp keeps ~50pt of a window visible
+    // when pushed below the bottom edge), so the question isn't "which corner
+    // of this monitor" but "which corner anywhere is cheapest". With a second
+    // display the answer is usually its far corner — the primary display,
+    // where the user's attention lives, stays completely clean. A main-
+    // monitor corner carries a small extra penalty for exactly that reason.
+    var bestSpot: (score: Int, monitor: Monitor, corner: OptimalHideCorner)?
     for monitor in monitors {
         let xOff = monitor.width * 0.1
         let yOff = monitor.height * 0.1
@@ -197,15 +204,16 @@ private func layoutWorkspaces() async throws {
         // the one that sees this coming, and at weight 1 it was outvoted by
         // the Dock.
         let dockPenalty = important / 2
+        let mainPenalty = monitor.isMain ? 1 : 0
         let blcDockObstructed = monitor.visibleRect.minX > monitor.rect.minX + 2 ? dockPenalty : 0
         let brcDockObstructed = monitor.visibleRect.maxX < monitor.rect.maxX - 2 ? dockPenalty : 0
 
-        let corner: OptimalHideCorner =
-            monitors.sumOfInt { important * (contains($0, blc1) + contains($0, blc2) + contains($0, blc3)) } + blcDockObstructed <
-            monitors.sumOfInt { important * (contains($0, brc1) + contains($0, brc2) + contains($0, brc3)) } + brcDockObstructed
-            ? .bottomLeftCorner
-            : .bottomRightCorner
-        monitorToOptimalHideCorner[monitor.rect.topLeftCorner] = corner
+        let blcScore = monitors.sumOfInt { important * (contains($0, blc1) + contains($0, blc2) + contains($0, blc3)) }
+            + blcDockObstructed + mainPenalty
+        let brcScore = monitors.sumOfInt { important * (contains($0, brc1) + contains($0, brc2) + contains($0, brc3)) }
+            + brcDockObstructed + mainPenalty
+        if bestSpot == nil || blcScore < bestSpot!.score { bestSpot = (blcScore, monitor, .bottomLeftCorner) }
+        if brcScore < bestSpot!.score { bestSpot = (brcScore, monitor, .bottomRightCorner) }
     }
 
     // to reduce flicker, first unhide visible workspaces, then hide invisible ones
@@ -215,9 +223,9 @@ private func layoutWorkspaces() async throws {
         try await workspace.layoutWorkspace()
     }
     for workspace in Workspace.all where !workspace.isVisible {
-        let corner = monitorToOptimalHideCorner[workspace.workspaceMonitor.rect.topLeftCorner] ?? .bottomRightCorner
         for window in workspace.allLeafWindowsRecursive {
-            try await (window as! MacWindow).hideInCorner(corner) // todo as!
+            try await (window as! MacWindow).hideInCorner(
+                bestSpot?.corner ?? .bottomRightCorner, on: bestSpot?.monitor) // todo as!
         }
     }
 }
