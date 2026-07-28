@@ -30,7 +30,12 @@ struct MacosNativeFullscreenCommand: Command {
             }
         }
         window.asMacWindow().setNativeFullscreen(newState)
-        guard let workspace = window.visualWorkspace else {
+        // The window's OWN workspace, not the one currently showing on its
+        // monitor: by exit time the monitor's visible workspace can be a
+        // different one (the fullscreen Space displaced it), and homing to
+        // visualWorkspace teleported the window across workspaces on every
+        // fullscreen round trip (measured: ws 0 → ws 1).
+        guard let workspace = window.nodeWorkspace ?? window.visualWorkspace else {
             return .fail(io.err(windowIsntPartOfTree(window)))
         }
         if newState { // Enter fullscreen

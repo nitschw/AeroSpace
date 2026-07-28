@@ -24,7 +24,11 @@ final class MacWindow: Window {
             macApp,
             isStartup
                 ? (rect?.center.monitorApproximation ?? mainMonitor).activeWorkspace
-                : focus.workspace,
+                // A window id we've seen die goes back to the workspace it
+                // died on — it "died" because a native Space visit hid it
+                // from AX, not because it closed. Only genuinely new windows
+                // land on the focused workspace.
+                : recallWorkspace(windowId: windowId) ?? focus.workspace,
             window: nil,
             .cancellable,
         )
@@ -83,6 +87,9 @@ final class MacWindow: Window {
         if !skipClosedWindowsCache { cacheClosedWindowIfNeeded() }
         let parent = unbindFromParent().parent
         let deadWindowWorkspace = parent.nodeWorkspace
+        if let deadWindowWorkspace {
+            rememberWorkspace(windowId: windowId, deadWindowWorkspace.name)
+        }
         let focus = focus
         if let deadWindowWorkspace, deadWindowWorkspace == focus.workspace ||
             deadWindowWorkspace == prevFocusedWorkspace && prevFocusedWorkspaceDate.distance(to: .now) < 1
