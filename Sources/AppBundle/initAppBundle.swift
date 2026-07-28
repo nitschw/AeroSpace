@@ -14,6 +14,13 @@ import Foundation
             interceptTermination(SIGINT)
             interceptTermination(SIGKILL)
         }
+        // Release builds too: the supervisor stops the engine with SIGTERM,
+        // and dying without cleanup leaves an AXObserver registered inside
+        // EVERY app we ever subscribed to. Those linger until the target
+        // apps restart, and they accumulate across engine restarts until
+        // the whole accessibility layer crawls (measured: 10-second
+        // list-workspaces on a machine after a day of engine cycling).
+        interceptTermination(SIGTERM)
 
         await bootstrapConfig_nonCancellable()
         _ = await reloadConfig_nonCancellable()

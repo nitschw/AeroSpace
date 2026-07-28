@@ -5,6 +5,22 @@ actor AwaitableOneTimeBroadcastLatch {
     private var done = false
     private var awaiters: [UniqueToken: Nullable<CheckedContinuation<(), any Error>>] = [:]
 
+    /// Bounded wait: gives up (without error) after the timeout — the
+    /// caller proceeds and whatever the latch guards completes in its own
+    /// time. For registration paths a stuck latch must never stall the
+    /// waiter's whole world.
+    func await(timeoutSeconds: Double) async throws {
+        try await withThrowingTaskGroup(of: Bool.self) { group in
+            group.addTask { try await self.await(); return true }
+            group.addTask {
+                try? await Task.sleep(for: .seconds(timeoutSeconds))
+                return false
+            }
+            _ = try await group.next()
+            group.cancelAll()
+        }
+    }
+
     func await() async throws {
         try checkCancellation()
         if done { return }

@@ -13,6 +13,11 @@ func interceptTermination(_ _signal: Int32) {
         check(Thread.current.isMainThread)
         Task.startUnstructured { @MainActor in
             terminationHandler?.beforeTermination()
+            // Unsubscribe from every app before dying: each per-app AX
+            // thread removes its observers on the way out, which is the
+            // difference between a clean exit and leaving debris in every
+            // app's accessibility tables until those apps restart.
+            await MacApp.destroyAllForTermination()
             exit(signal)
         }
     } as sig_t)

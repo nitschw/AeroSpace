@@ -56,7 +56,7 @@ final class MacApp: AbstractApp {
         if let existing = allAppsMap[pid] { return existing }
         try checkCancellation()
         if let wip = wipPids[pid] {
-            try await wip.await()
+            try await wip.await(timeoutSeconds: 2)
             return allAppsMap[pid]
         }
         let wip = AwaitableOneTimeBroadcastLatch()
@@ -95,7 +95,12 @@ final class MacApp: AbstractApp {
         thread.name = "AxAppThread \(nsApp.idForDebug)"
         thread.start()
 
-        try await wip.await()
+        // Bounded: subscribing to an app with a poisoned accessibility layer
+        // can block for many seconds, and awaiting it unbounded from refresh
+        // paths wedged the whole command server behind one bad app. On
+        // timeout the app simply isn't registered yet — the next refresh
+        // picks it up when its thread finishes.
+        try await wip.await(timeoutSeconds: 2)
         return allAppsMap[pid]
     }
 
@@ -331,7 +336,20 @@ final class MacApp: AbstractApp {
         return alive
     }
 
-    private func destroy() async {
+    /// Termination path: stop every app's AX thread so their subscriptions
+    /// are removed from the target apps, bounded so a hung app can't stall
+    /// the exit.
+    @MainActor static func destroyAllForTermination() async {
+        // Kick every destroy without awaiting any single one (a hung app's
+        // thread must not stall the exit), then give the pack a fixed beat
+        // to run their unsubscribes; stragglers die with the process.
+        for app in allAppsMap.values {
+            Task.startUnstructured { await app.destroy() }
+        }
+        try? await Task.sleep(for: .milliseconds(600))
+    }
+
+    fileprivate func destroy() async {
         _ = await Task.startUnstructured { @MainActor [pid] in _ = MacApp.allAppsMap.removeValue(forKey: pid) }.result
         for (_, job) in setFrameJobs {
             job.cancel()
