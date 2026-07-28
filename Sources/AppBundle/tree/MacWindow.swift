@@ -124,6 +124,13 @@ final class MacWindow: Window {
     /// cheapest corner in the arrangement is cheapest for everyone.
     @MainActor
     func hideInCorner(_ corner: OptimalHideCorner, on spot: Monitor?) async throws {
+        // Park once. This used to re-issue the AX setFrame for every hidden
+        // window on EVERY refresh session; with dozens parked and any app
+        // answering AX slowly (windows on an inactive native Space can block
+        // for seconds per call), refresh sessions ran for seconds, every
+        // command queued behind them, and the whole system pinwheeled. A
+        // parked window has nowhere to go.
+        if isHiddenInCorner { return }
         guard let nodeMonitor = spot ?? nodeMonitor else { return }
         // Don't accidentally override prevUnhiddenEmulationPosition in case of subsequent `hideInCorner` calls
         if !isHiddenInCorner {
